@@ -64,31 +64,48 @@ Clarinet.test({
 });
 
 Clarinet.test({
-    name: "Test points transfer between customers",
+    name: "Test reward tiers and multipliers",
     async fn(chain: Chain, accounts: Map<string, Account>) {
+        const deployer = accounts.get('deployer')!;
         const retailer = accounts.get('wallet_1')!;
-        const customer1 = accounts.get('wallet_2')!;
-        const customer2 = accounts.get('wallet_3')!;
-        
-        // Setup initial points
-        chain.mineBlock([
+        const customer = accounts.get('wallet_2')!;
+
+        // Setup reward tiers
+        let block = chain.mineBlock([
+            Tx.contractCall('loyalty-points', 'set-reward-tier',
+                [types.uint(1), types.ascii("Silver"), types.uint(1000), types.uint(2)],
+                deployer.address
+            ),
             Tx.contractCall('loyalty-points', 'add-retailer',
                 [types.principal(retailer.address)],
+                deployer.address
+            ),
+            // Award initial points to reach Silver tier
+            Tx.contractCall('loyalty-points', 'award-points',
+                [types.principal(customer.address), types.uint(1000)],
                 retailer.address
             ),
+            // Award more points with multiplier
             Tx.contractCall('loyalty-points', 'award-points',
-                [types.principal(customer1.address), types.uint(100)],
+                [types.principal(customer.address), types.uint(100)],
                 retailer.address
             )
         ]);
-        
-        let block = chain.mineBlock([
-            Tx.contractCall('loyalty-points', 'transfer-points',
-                [types.uint(50), types.principal(customer2.address)],
-                customer1.address
+
+        block.receipts[0].result.expectOk().expectBool(true);
+        block.receipts[1].result.expectOk().expectBool(true);
+        block.receipts[2].result.expectOk();
+        block.receipts[3].result.expectOk();
+
+        // Check final balance reflects multiplier
+        let balanceBlock = chain.mineBlock([
+            Tx.contractCall('loyalty-points', 'get-points-balance',
+                [types.principal(customer.address)],
+                customer.address
             )
         ]);
-        
-        block.receipts[0].result.expectOk().expectBool(true);
+
+        // Should be 1000 + (100 * 2) = 1200
+        balanceBlock.receipts[0].result.expectOk().expectUint(1200);
     }
 });
