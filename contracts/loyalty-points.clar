@@ -7,7 +7,7 @@
 (define-constant contract-owner tx-sender)
 (define-constant err-owner-only (err u100))
 (define-constant err-insufficient-points (err u101))
-(define-constant err-not-authorized (err u102))
+(define-constant err-not-authorized (err u102)) 
 (define-constant err-invalid-tier (err u103))
 
 ;; Data vars
@@ -45,25 +45,38 @@
     )
 )
 
-;; Get customer's tier based on points
+;; Get customer's highest eligible tier
 (define-read-only (get-customer-tier (customer principal))
     (let ((balance (ft-get-balance loyalty-points customer)))
-        (filter get-matching-tier (map-keys reward-tiers))
+      (get-highest-eligible-tier balance (map-keys reward-tiers))
     )
 )
 
-(define-private (get-matching-tier (tier-id uint))
-    (let (
-        (tier-info (unwrap! (map-get? reward-tiers tier-id) false))
+;; Get highest tier customer qualifies for
+(define-private (get-highest-eligible-tier (balance uint) (tier-ids (list 100 uint)))
+    (let ((highest-tier (fold check-tier-eligibility u0 tier-ids)))
+      highest-tier
     )
-    (>= (ft-get-balance loyalty-points tx-sender) (get points-required tier-info))
+)
+
+;; Check if customer eligible for tier and return highest tier
+(define-private (check-tier-eligibility (tier-id uint) (current-highest uint))
+    (match (map-get? reward-tiers tier-id)
+      tier-info (if (and
+                    (>= (ft-get-balance loyalty-points tx-sender) (get points-required tier-info))
+                    (> tier-id current-highest))
+                  tier-id
+                  current-highest)
+      current-highest
     )
 )
 
 ;; Award points to customer with tier multiplier
 (define-public (award-points (customer principal) (base-points uint))
     (let (
-        (tier-multiplier (default-to u1 (get multiplier (map-get? reward-tiers (get-customer-tier customer)))))
+        (customer-tier (get-customer-tier customer))
+        (tier-info (map-get? reward-tiers customer-tier))
+        (tier-multiplier (default-to u1 (get multiplier tier-info)))
         (final-points (* base-points tier-multiplier))
     )
     (begin
